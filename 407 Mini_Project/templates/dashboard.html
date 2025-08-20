@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Plug Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-900 text-white font-sans">
+
+  <div class="max-w-5xl mx-auto p-6 space-y-8">
+    <h1 class="text-3xl font-bold">🔌 Smart Plug Power Dashboard</h1>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-4 gap-4 text-center">
+      <div class="bg-gray-800 p-4 rounded-xl shadow">
+        <div class="text-lg">⚡ Watt</div>
+        <div id="wattLive" class="text-2xl font-bold text-green-400">--</div>
+      </div>
+      <div class="bg-gray-800 p-4 rounded-xl shadow">
+        <div class="text-lg">🔋 Voltage</div>
+        <div id="voltageLive" class="text-2xl font-bold text-blue-400">--</div>
+      </div>
+      <div class="bg-gray-800 p-4 rounded-xl shadow">
+        <div class="text-lg">🔌 Current</div>
+        <div id="currentLive" class="text-2xl font-bold text-yellow-400">--</div>
+      </div>
+      <div class="bg-gray-800 p-4 rounded-xl shadow">
+        <div class="text-lg">⚙️ Total Energy</div>
+        <div id="totalKWh" class="text-2xl font-bold text-pink-400">--</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="space-y-6">
+      <canvas id="wattChart" height="120"></canvas>
+      <canvas id="voltageChart" height="120"></canvas>
+      <canvas id="currentChart" height="120"></canvas>
+      <h2 class="text-xl font-bold mt-8 ">📊 Energy Usage (Last 60 Minutes)</h2>
+      <canvas id="minutelyBarChart" height="120"></canvas>
+
+      <h2 class="text-xl font-bold mt-8">Power, Current & Voltage Over Time</h2>
+      <canvas id="multiLineChart" height="120"></canvas>
+
+      <h2 class="text-xl font-bold mt-8">📈 Stacked Area Chart: Current, Watt, Voltage & Total kWh</h2>
+      <canvas id="stackedAreaChart" height="250"></canvas>
+
+    </div>
+  </div>
+
+  <script>
+
+    const wattCtx = document.getElementById('wattChart').getContext('2d');
+    const voltageCtx = document.getElementById('voltageChart').getContext('2d');
+    const currentCtx = document.getElementById('currentChart').getContext('2d');
+    //minute chart
+    const minutelyCtx = document.getElementById('minutelyBarChart').getContext('2d');
+    // <-- Added this missing line -->
+    const multiLineCtx = document.getElementById('multiLineChart').getContext('2d');
+
+    //stack chart
+    const stackedAreaCtx = document.getElementById('stackedAreaChart').getContext('2d');
+
+    const wattChart = new Chart(wattCtx, {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'Watt (W)', data: [], borderColor: '#4ade80', fill: false }] },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+
+    const voltageChart = new Chart(voltageCtx, {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'Voltage (V)', data: [], borderColor: '#60a5fa', fill: false }] },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+
+    const currentChart = new Chart(currentCtx, {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'Current (mA)', data: [], borderColor: '#facc15', fill: false }] },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
+
+    //minute chart
+    const minutelyBarChart = new Chart(minutelyCtx, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Energy (kWh)',
+          data: [],
+          backgroundColor: '#f87171' // red-ish
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { beginAtZero: true },
+          x: { ticks: { maxRotation: 90, minRotation: 45 } }
+        }
+      }
+    });
+
+    const multiLineChart = new Chart(multiLineCtx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Watt (W)',
+            data: [],
+            borderColor: '#4ade80',
+            yAxisID: 'y',
+            fill: false
+          },
+          {
+            label: 'Voltage (V)',
+            data: [],
+            borderColor: '#60a5fa',
+            yAxisID: 'y',
+            fill: false
+          },
+          {
+            label: 'Current (mA)',
+            data: [],
+            borderColor: '#facc15',
+            yAxisID: 'y1',
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        stacked: false,
+        plugins: {
+          title: {
+            display: true,
+            text: 'Watt, Voltage & Current (Secondary Axis for Current)'
+          }
+        },
+        scales: {
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            title: {
+              display: true,
+              text: 'Watt / Voltage'
+            }
+          },
+          y1: {
+            type: 'linear',
+            display: true,
+            position: 'right',
+            grid: {
+              drawOnChartArea: false // disables y1 grid overlap
+            },
+            title: {
+              display: true,
+              text: 'Current (mA)'
+            }
+          }
+        }
+      }
+    });
+
+
+    //stacked area chart
+
+    const stackedAreaChart = new Chart(stackedAreaCtx, {
+      type: 'line',
+      data: {
+        labels: [], // timestamps (HH:MM:SS)
+        datasets: [
+          {
+            label: 'Watt (W)',
+            data: [],
+            borderColor: 'rgba(74, 222, 128, 0.8)', // green
+            backgroundColor: 'rgba(74, 222, 128, 0.4)',
+            fill: true,
+            stack: 'combined',
+            tension: 0.3,
+          },
+          {
+            label: 'Current (mA)',
+            data: [],
+            borderColor: 'rgba(250, 204, 21, 0.8)', // yellow
+            backgroundColor: 'rgba(250, 204, 21, 0.4)',
+            fill: true,
+            stack: 'combined',
+            tension: 0.3,
+          },
+          
+          {
+            label: 'Voltage (V)',
+            data: [],
+            borderColor: 'rgba(96, 165, 250, 0.8)', // blue
+            backgroundColor: 'rgba(96, 165, 250, 0.4)',
+            fill: true,
+            stack: 'combined',
+            tension: 0.3,
+          },
+          {
+            label: 'Total kWh',
+            data: [],
+            borderColor: 'rgba(236, 72, 153, 0.8)', // pink
+            backgroundColor: 'rgba(236, 72, 153, 0.4)',
+            fill: true,
+            stack: 'combined',
+            tension: 0.3,
+            yAxisID: 'y1', // Use a secondary Y axis because total kWh range is different
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        stacked: true,
+        scales: {
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            min: 5,
+            title: {
+              display: true,
+              text: 'Current (mA), Watt (W), Voltage (V)'
+            }
+          },
+          y1: {
+            type: 'linear',
+            display: true,
+            position: 'right',
+            grid: {
+              drawOnChartArea: false
+            },
+            title: {
+              display: true,
+              text: 'Total kWh'
+            }
+          }
+        }
+      }
+    });
+
+
+    async function updateCharts() {
+      const res = await fetch('/api/data');
+      const data = await res.json();
+
+      const labels = data.map(d => d.timestamp.slice(11));
+      const watts = data.map(d => d.watt);
+      const volts = data.map(d => d.voltage / 10); // adjust if needed
+      const currents = data.map(d => d.current);
+
+      document.getElementById('wattLive').textContent = watts.at(-1) + " W";
+      document.getElementById('voltageLive').textContent = volts.at(-1).toFixed(1) + " V";
+      document.getElementById('currentLive').textContent = currents.at(-1).toFixed(3) + " mA";
+
+      wattChart.data.labels = labels;
+      wattChart.data.datasets[0].data = watts;
+
+      voltageChart.data.labels = labels;
+      voltageChart.data.datasets[0].data = volts;
+
+      currentChart.data.labels = labels;
+      currentChart.data.datasets[0].data = currents;
+
+      multiLineChart.data.labels = labels;
+      multiLineChart.data.datasets[0].data = watts;
+      multiLineChart.data.datasets[1].data = volts;
+      multiLineChart.data.datasets[2].data = currents;
+
+      // Fetch total kWh once per update
+      const totalKWhRes = await fetch('/api/total-kwh');
+      const totalKWhData = await totalKWhRes.json();
+
+      const totalKWhArr = Array(data.length).fill(totalKWhData.total_kwh);
+
+      stackedAreaChart.data.labels = labels;
+      stackedAreaChart.data.datasets[0].data = watts.map(w => w);
+      stackedAreaChart.data.datasets[1].data = currents;
+      
+      stackedAreaChart.data.datasets[2].data = volts;
+      stackedAreaChart.data.datasets[3].data = totalKWhArr;
+
+      // Update all charts
+      wattChart.update();
+      voltageChart.update();
+      currentChart.update();
+      multiLineChart.update();
+      stackedAreaChart.update();
+    }
+
+
+    async function updateTotalKWh() {
+      const res = await fetch('/api/total-kwh');
+      const data = await res.json();
+      document.getElementById('totalKWh').textContent = data.total_kwh + " kWh";
+    }
+
+    async function updateMinutelyStats() {
+      const res = await fetch('/api/stats/minutely');
+      const stats = await res.json();
+
+      minutelyBarChart.data.labels = stats.map(s => s.minute.slice(11)); // show only HH:MM
+      minutelyBarChart.data.datasets[0].data = stats.map(s => s.total_kwh);
+      minutelyBarChart.update();
+    }
+
+
+    setInterval(() => {
+      updateCharts();
+      updateTotalKWh();
+    }, 5000);
+
+    setInterval(updateMinutelyStats, 60000); // refresh every 60s
+    updateCharts();
+    updateTotalKWh();
+    updateMinutelyStats();
+  </script>
+</body>
+
+</html>
